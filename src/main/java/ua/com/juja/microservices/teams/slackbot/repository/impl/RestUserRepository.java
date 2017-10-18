@@ -1,15 +1,14 @@
 package ua.com.juja.microservices.teams.slackbot.repository.impl;
 
+import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
 import ua.com.juja.microservices.teams.slackbot.exceptions.ApiError;
+import ua.com.juja.microservices.teams.slackbot.exceptions.TeamExchangeException;
 import ua.com.juja.microservices.teams.slackbot.exceptions.UserExchangeException;
 import ua.com.juja.microservices.teams.slackbot.model.users.User;
 import ua.com.juja.microservices.teams.slackbot.model.users.UserSlackNameRequest;
@@ -19,7 +18,6 @@ import ua.com.juja.microservices.teams.slackbot.util.SlackNameHandler;
 import ua.com.juja.microservices.teams.slackbot.util.Utils;
 
 import javax.inject.Inject;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -29,23 +27,27 @@ import java.util.List;
 @Slf4j
 @Profile({"production", "default"})
 public class RestUserRepository implements UserRepository {
-    private final RestTemplate restTemplate;
+
     @Value("${users.endpoint.usersBySlackNames}")
     private String usersUrlFindUsersBySlackNames;
     @Value("${users.endpoint.usersByUuids}")
     private String usersUrlFindUsersByUuids;
-
     @Inject
-    public RestUserRepository(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
-    }
+    private GatewayClient gatewayClient;
 
     @Override
     public List<User> findUsersBySlackNames(List<String> slackNames) {
         SlackNameHandler.addAtToSlackNames(slackNames);
         UserSlackNameRequest userSlackNameRequest = new UserSlackNameRequest(slackNames);
-        HttpEntity<UserSlackNameRequest> request = new HttpEntity<>(userSlackNameRequest, Utils.setupJsonHttpHeaders());
-        List<User> users = getUsers(request, usersUrlFindUsersBySlackNames);
+        List<User> users;
+        try {
+            log.debug("Send request '{}' to User service to url '{}'", userSlackNameRequest, usersUrlFindUsersBySlackNames);
+            users = gatewayClient.getUsersBySlackNames(userSlackNameRequest);
+            log.debug("Get response '{}' from User service", users);
+        } catch (FeignException ex) {
+            ApiError error = Utils.convertToApiError(ex.getMessage().substring(ex.getMessage().indexOf("content:") + 8));
+            throw new UserExchangeException(error, ex);
+        }
         log.info("Found Users: '{}' by slackNames: '{}'", users, slackNames);
         return users;
     }
@@ -53,24 +55,16 @@ public class RestUserRepository implements UserRepository {
     @Override
     public List<User> findUsersByUuids(List<String> uuids) {
         UserUuidRequest userUuidRequest = new UserUuidRequest(uuids);
-        HttpEntity<UserUuidRequest> request = new HttpEntity<>(userUuidRequest, Utils.setupJsonHttpHeaders());
-        List<User> users = getUsers(request, usersUrlFindUsersByUuids);
-        log.info("Found Users:{} by uuids: '{}'", users, uuids);
-        return users;
-    }
-
-    private <T> List<User> getUsers(HttpEntity<T> request, String userServiceURL) {
         List<User> users;
         try {
-            log.debug("Send request '{}' to User service to url '{}'", request, userServiceURL);
-            ResponseEntity<User[]> response = restTemplate.exchange(userServiceURL,
-                    HttpMethod.POST, request, User[].class);
-            log.debug("Get response '{}' from User service", response);
-            users = Arrays.asList(response.getBody());
-        } catch (HttpClientErrorException ex) {
-            ApiError error = Utils.convertToApiError(ex);
+            log.debug("Send request '{}' to User service to url '{}'", userUuidRequest, usersUrlFindUsersByUuids);
+            users = gatewayClient.getUsersByUuids(userUuidRequest);
+            log.debug("Get response '{}' from User service", users);
+        } catch (FeignException ex) {
+            ApiError error = Utils.convertToApiError(ex.getMessage().substring(ex.getMessage().indexOf("content:") + 8));
             throw new UserExchangeException(error, ex);
         }
+        log.info("Found Users:{} by uuids: '{}'", users, uuids);
         return users;
     }
 }
