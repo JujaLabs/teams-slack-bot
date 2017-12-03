@@ -1,5 +1,8 @@
 package ua.com.juja.microservices.teams.slackbot.controller;
 
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 import lombok.extern.slf4j.Slf4j;
 import me.ramswaroop.jbot.core.slack.models.RichMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +18,7 @@ import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.HttpURLConnection;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -57,7 +61,18 @@ public class TeamSlackbotController {
         this.restTemplate = restTemplate;
     }
 
-    @PostMapping(value = "${teams.slackbot.endpoint.activateTeam}", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @PostMapping(value = "${teams.slackbot.endpoint.activateTeam}",
+            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @ApiOperation(
+            value = "Activate new Team, consist of four users",
+            notes = "This method activates new Team, which contains four users"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(code = HttpURLConnection.HTTP_OK, message = "Successfully activated Team"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_REQUEST, message = "Bad request"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
+            @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
+    })
     public void onReceiveSlashCommandActivateTeam(@RequestParam("token") String token,
                                                   @RequestParam("user_name") String fromUser,
                                                   @RequestParam("text") String text,
@@ -76,6 +91,16 @@ public class TeamSlackbotController {
 
     @PostMapping(value = "${teams.slackbot.endpoint.deactivateTeam}",
             consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @ApiOperation(
+            value = "Deactivate Team",
+            notes = "This method deactivates Team"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(code = HttpURLConnection.HTTP_OK, message = "Successfully deactivated Team"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_REQUEST, message = "Bad request"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
+            @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
+    })
     public void onReceiveSlashCommandDeactivateTeam(@RequestParam("token") String token,
                                                     @RequestParam("user_name") String fromUser,
                                                     @RequestParam("text") String text,
@@ -93,7 +118,18 @@ public class TeamSlackbotController {
         }
     }
 
-    @PostMapping(value = "${teams.slackbot.endpoint.getTeam}", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @PostMapping(value = "${teams.slackbot.endpoint.getTeam}",
+            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @ApiOperation(
+            value = "Get members of active Team of certain user",
+            notes = "This method get members of active Team of certain user"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(code = HttpURLConnection.HTTP_OK, message = "Successfully got members of active Team of certain user"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_REQUEST, message = "Bad request"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
+            @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
+    })
     public void onReceiveSlashCommandGetTeam(@RequestParam("token") String token,
                                              @RequestParam("user_name") String fromUser,
                                              @RequestParam("text") String text,
@@ -111,7 +147,18 @@ public class TeamSlackbotController {
         }
     }
 
-    @PostMapping(value = "${teams.slackbot.endpoint.getMyTeam}", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @PostMapping(value = "${teams.slackbot.endpoint.getMyTeam}",
+            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @ApiOperation(
+            value = "Get members of my active Team",
+            notes = "This method get members of my active Team"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(code = HttpURLConnection.HTTP_OK, message = "Successfully got members of my active Team"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_REQUEST, message = "Bad request"),
+            @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
+            @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
+    })
     public void onReceiveSlashCommandGetMyTeam(@RequestParam("token") String token,
                                                @RequestParam("user_name") String fromUser,
                                                @RequestParam("response_url") String responseUrl,
