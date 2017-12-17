@@ -18,6 +18,7 @@ import ua.com.juja.microservices.teams.slackbot.model.teams.DeactivateTeamReques
 import ua.com.juja.microservices.teams.slackbot.model.teams.Team;
 import ua.com.juja.microservices.teams.slackbot.model.users.User;
 import ua.com.juja.microservices.teams.slackbot.repository.TeamRepository;
+import ua.com.juja.microservices.teams.slackbot.util.SlackUserHandler;
 
 import javax.inject.Inject;
 import java.util.Arrays;
@@ -37,13 +38,14 @@ import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyListOf;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 
 /**
  * @author Ivan Shapovalov
  */
 @RunWith(SpringRunner.class)
-@SpringBootTest()
+@SpringBootTest
 public class TeamServiceTest {
     private static final int TEAM_SIZE = 4;
     private static User user1;
@@ -62,11 +64,11 @@ public class TeamServiceTest {
 
     @BeforeClass
     public static void oneTimeSetUp() {
-        user1 = new User("uuid1", "@slack1");
-        user2 = new User("uuid2", "@slack2");
-        user3 = new User("uuid3", "@slack3");
-        user4 = new User("uuid4", "@slack4");
-        userFrom = new User("uuid-from", "@slack-from");
+        user1 = new User("uuid1", "slack1");
+        user2 = new User("uuid2", "slack2");
+        user3 = new User("uuid3", "slack3");
+        user4 = new User("uuid4", "slack4");
+        userFrom = new User("uuid-from", "slack-from");
     }
 
     @Before
@@ -76,75 +78,108 @@ public class TeamServiceTest {
 
     @Test
     public void activateTeamIfMembersSizeEqualsFourAndFromUserInTeamExecutedCorrectly() {
+        //given
         String text = String.format("%s %s %s %s",
-                user1.getSlack(), user2.getSlack(), user3.getSlack(), userFrom.getSlack());
+                SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user2.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user3.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(userFrom.getSlackUser()));
         Set<String> uuids = new LinkedHashSet<>(Arrays.asList(
                 user1.getUuid(), user2.getUuid(), user3.getUuid(), userFrom.getUuid()));
         List<User> users = Arrays.asList(user1, user2, user3, userFrom);
-        when(userService.findUsersBySlackNames(anyListOf(String.class))).thenReturn(users);
-        Team expected = new Team(uuids, userFrom.getUuid(), "id", new Date(), new Date());
-        given(teamRepository.activateTeam(any(ActivateTeamRequest.class))).willReturn(expected);
+        Team activatedTeam = new Team(uuids, userFrom.getUuid(), "id", new Date(), new Date());
+        Set<String> expected = new LinkedHashSet<>(
+                Arrays.asList(user1.getSlackUser(), user2.getSlackUser(), user3.getSlackUser(), userFrom.getSlackUser()));
 
-        Team actual = teamService.activateTeam(userFrom.getSlack(), text);
+        when(userService.findUsersBySlackUsers(anyListOf(String.class))).thenReturn(users);
+        given(teamRepository.activateTeam(any(ActivateTeamRequest.class))).willReturn(activatedTeam);
+        when(userService.findUsersByUuids(anyListOf(String.class))).thenReturn(users);
 
+        //when
+        Set<String> actual = teamService.activateTeam(userFrom.getSlackUser(), text);
+
+        //then
         assertEquals(expected, actual);
-        verify(userService).findUsersBySlackNames(anyListOf(String.class));
+        verify(userService).findUsersBySlackUsers(anyListOf(String.class));
         ArgumentCaptor<ActivateTeamRequest> captor = ArgumentCaptor.forClass(ActivateTeamRequest.class);
         verify(teamRepository).activateTeam(captor.capture());
         assertTrue(captor.getValue().getMembers().equals(uuids));
         assertTrue(captor.getValue().getFrom().equals(userFrom.getUuid()));
+        verify(userService).findUsersByUuids(anyListOf(String.class));
         verifyNoMoreInteractions(userService, teamRepository);
     }
 
     @Test
     public void activateTeamIfMembersSizeEqualsFourAndFromUserNotInTeamExecutedCorrectly() {
-        String from = userFrom.getSlack();
+        //given
         String text = String.format("%s %s %s %s",
-                user1.getSlack(), user2.getSlack(), user3.getSlack(), user4.getSlack());
+                SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user2.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user3.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user4.getSlackUser()));
         Set<String> uuids = new LinkedHashSet<>(Arrays.asList(
                 user1.getUuid(), user2.getUuid(), user3.getUuid(), user4.getUuid()));
         List<User> users = Arrays.asList(user1, user2, user3, user4, userFrom);
-        when(userService.findUsersBySlackNames(anyListOf(String.class))).thenReturn(users);
-        Team expected = new Team(uuids, userFrom.getUuid(), "id", new Date(), new Date());
-        given(teamRepository.activateTeam(any(ActivateTeamRequest.class))).willReturn(expected);
+        when(userService.findUsersBySlackUsers(anyListOf(String.class))).thenReturn(users);
+        Set<String> expected = new LinkedHashSet<>(
+                Arrays.asList(user1.getSlackUser(), user2.getSlackUser(), user3.getSlackUser(), user4.getSlackUser()));
+        Team activatedTeam = new Team(uuids, userFrom.getUuid(), "id", new Date(), new Date());
+        List<User> usersInTeam = Arrays.asList(user1, user2, user3, user4);
+        given(teamRepository.activateTeam(any(ActivateTeamRequest.class))).willReturn(activatedTeam);
+        when(userService.findUsersByUuids(anyListOf(String.class))).thenReturn(usersInTeam);
 
-        Team actual = teamService.activateTeam(from, text);
+        //when
+        Set<String> actual = teamService.activateTeam(userFrom.getSlackUser(), text);
 
+        //then
         assertEquals(expected, actual);
-        verify(userService).findUsersBySlackNames(anyListOf(String.class));
+        verify(userService).findUsersBySlackUsers(anyListOf(String.class));
         ArgumentCaptor<ActivateTeamRequest> captor = ArgumentCaptor.forClass(ActivateTeamRequest.class);
         verify(teamRepository).activateTeam(captor.capture());
         assertTrue(captor.getValue().getMembers().equals(uuids));
-        assertTrue(captor.getValue().getFrom().equals("uuid-from"));
+        assertTrue(captor.getValue().getFrom().equals(userFrom.getUuid()));
+        verify(userService).findUsersByUuids(anyListOf(String.class));
         verifyNoMoreInteractions(userService, teamRepository);
     }
 
     @Test
     public void activateTeamIfMembersSizeNotEqualsFourThrowsException() {
-        String from = userFrom.getSlack();
+        //given
+        String from = userFrom.getSlackUser();
         String text = String.format("%s %s %s",
-                user1.getSlack(), user2.getSlack(), user3.getSlack());
+                SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user2.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user3.getSlackUser()));
 
         expectedException.expect(WrongCommandFormatException.class);
-        expectedException.expectMessage(String.format("We found 3 slack names in your command." +
+        expectedException.expectMessage(String.format("We found 3 slack user in your command." +
                 " But size of the team must be %s.", TEAM_SIZE));
 
-        teamService.activateTeam(from, text);
+        try {
+            //when
+            teamService.activateTeam(from, text);
+        } finally {
+            //then
+            verifyZeroInteractions(userService, teamRepository);
+        }
     }
 
     @Test
     public void activateTeamIfMembersOfRequestAndResponseOfTeamsServiceNotEqualsThrowsException() {
-        String from = userFrom.getSlack();
+        //given
+        String from = userFrom.getSlackUser();
         String text = String.format("%s %s %s %s",
-                user1.getSlack(), user2.getSlack(), user3.getSlack(), user4.getSlack());
-        List<String> slackNames = Arrays.asList(user1.getSlack(), user2.getSlack(), user3.getSlack(), user4.getSlack(), from);
+                SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user2.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user3.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user4.getSlackUser()));
+        List<String> slackUsers = Arrays.asList(user1.getSlackUser(), user2.getSlackUser(), user3.getSlackUser(), user4.getSlackUser(), from);
         Set<String> requestMembers = new LinkedHashSet<>(Arrays.asList(
                 user1.getUuid(), user2.getUuid(), user3.getUuid(), user4.getUuid()));
         Set<String> responseMembers = new LinkedHashSet<>(Arrays.asList(
-                user1.getUuid(), user2.getUuid(), user3.getUuid(), "uuid5"
-        ));
+                user1.getUuid(), user2.getUuid(), user3.getUuid(), "uuid5"));
         List<User> users = Arrays.asList(user1, user2, user3, user4, userFrom);
-        when(userService.findUsersBySlackNames(slackNames)).thenReturn(users);
+        when(userService.findUsersBySlackUsers(slackUsers)).thenReturn(users);
         Team activatedTeam = new Team(responseMembers, userFrom.getUuid(), "id", new Date(), new Date());
         given(teamRepository.activateTeam(any(ActivateTeamRequest.class))).willReturn(activatedTeam);
 
@@ -152,13 +187,15 @@ public class TeamServiceTest {
         expectedException.expectMessage("Team members is not equals in request and response from Teams Service");
 
         try {
+            //when
             teamService.activateTeam(from, text);
         } finally {
-            verify(userService).findUsersBySlackNames(slackNames);
+            //then
+            verify(userService).findUsersBySlackUsers(slackUsers);
             ArgumentCaptor<ActivateTeamRequest> captor = ArgumentCaptor.forClass(ActivateTeamRequest.class);
             verify(teamRepository).activateTeam(captor.capture());
             assertTrue(captor.getValue().getMembers().equals(requestMembers));
-            assertTrue(captor.getValue().getFrom().equals("uuid-from"));
+            assertTrue(captor.getValue().getFrom().equals(userFrom.getUuid()));
             verifyNoMoreInteractions(userService, teamRepository);
         }
     }
@@ -168,82 +205,89 @@ public class TeamServiceTest {
         expectedException.expect(IllegalArgumentException.class);
         expectedException.expectMessage("Text must not be null!");
 
-        teamService.activateTeam("@slack-from", null);
+        teamService.activateTeam("from-id", null);
     }
 
     @Test
     public void activateTeamIfFromUserIsNullThrowsException() {
         expectedException.expect(IllegalArgumentException.class);
-        expectedException.expectMessage("FromUser must not be null!");
+        expectedException.expectMessage("FromSlackUser must not be null!");
 
         teamService.activateTeam(null, "text");
     }
 
     @Test
-    public void getTeamIfOneSlackNameInTextExecutedCorrectly() {
-        String from = userFrom.getSlack();
-        String text = user1.getSlack();
-        List<String> slackNamesInText = Collections.singletonList(text);
+    public void getTeamIfOneSlackUserInTextExecutedCorrectly() {
+        //given
+        String text = String.format("%s", SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()));
+        List<String> slackUsersInText = Collections.singletonList(user1.getSlackUser());
         List<User> users = Collections.singletonList(user1);
         List<User> teamUsers = Arrays.asList(user1, user2, user3, user4);
         Set<String> uuids = teamUsers.stream().map(User::getUuid).collect(Collectors.toSet());
-        Set<String> expected = new LinkedHashSet<>(Arrays.asList(user1.getSlack(), user2.getSlack(), user3.getSlack(),
-                user4.getSlack()));
+        Set<String> expected = new LinkedHashSet<>(Arrays.asList(user1.getSlackUser(), user2.getSlackUser(), user3.getSlackUser(),
+                user4.getSlackUser()));
         Team team = new Team(uuids, userFrom.getUuid(), "id", new Date(), new Date());
-        given(userService.findUsersBySlackNames(slackNamesInText)).willReturn(users);
+        given(userService.findUsersBySlackUsers(slackUsersInText)).willReturn(users);
         given(teamRepository.getTeam(user1.getUuid())).willReturn(team);
         given(userService.findUsersByUuids(anyListOf(String.class))).willReturn(teamUsers);
 
+        //when
         Set<String> actual = teamService.getTeam(text);
 
+        //then
         assertEquals(expected, actual);
-        verify(userService).findUsersBySlackNames(slackNamesInText);
+        verify(userService).findUsersBySlackUsers(slackUsersInText);
         verify(teamRepository).getTeam(user1.getUuid());
         verify(userService).findUsersByUuids(anyListOf(String.class));
         verifyNoMoreInteractions(teamRepository, userService);
     }
 
     @Test
-    public void getTeamIfMoreThanOneSlackNameInTextThrowsException() {
-        String text = String.format("%s %s", user1.getSlack(), user2.getSlack());
+    public void getTeamIfMoreThanOneSlackUserInTextThrowsException() {
+        String text = String.format("%s %s",
+                SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user2.getSlackUser()));
         List<User> users = Arrays.asList(user1, user2);
         expectedException.expect(WrongCommandFormatException.class);
-        expectedException.expectMessage(String.format("We found %d slack names in your command." +
-                " But expect one slack name.", users.size()));
+        expectedException.expectMessage(String.format("We found %d slack user in your command." +
+                " But expect one slack user.", users.size()));
 
         teamService.getTeam(text);
     }
 
     @Test
-    public void getTeamIfZeroSlackNameInTextThrowsException() {
+    public void getTeamIfZeroSlackUserInTextThrowsException() {
         String text = "slack1 slack2";
-        List<String> slackNamesInText = Collections.emptyList();
+        List<String> slackUsersInText = Collections.emptyList();
         expectedException.expect(WrongCommandFormatException.class);
-        expectedException.expectMessage(String.format("We found %d slack names in your command." +
-                " But expect one slack name.", slackNamesInText.size()));
+        expectedException.expectMessage(String.format("We found %d slack user in your command." +
+                " But expect one slack user.", slackUsersInText.size()));
 
         teamService.getTeam(text);
     }
 
     @Test
-    public void deactivateTeamIfOneFromUserSlackNameInTextExecutedCorrectly() {
-        String from = userFrom.getSlack();
-        String text = userFrom.getSlack();
-        List<String> slackNames = Collections.singletonList(text);
+    public void deactivateTeamIfOneFromUserSlackUserInTextExecutedCorrectly() {
+        //given
+        String from = userFrom.getSlackUser();
+        String text = String.format("%s", SlackUserHandler.wrapSlackUserInFullPattern(userFrom.getSlackUser()));
+        List<String> slackUsers = Collections.singletonList(userFrom.getSlackUser());
         List<User> users = Collections.singletonList(userFrom);
         Set<String> expected = new LinkedHashSet<>(Arrays.asList(
-                user1.getSlack(), user2.getSlack(), user3.getSlack(), user4.getSlack()));
-        given(userService.findUsersBySlackNames(slackNames)).willReturn(users);
+                user1.getSlackUser(), user2.getSlackUser(), user3.getSlackUser(), user4.getSlackUser()));
+        given(userService.findUsersBySlackUsers(slackUsers)).willReturn(users);
         List<User> teamUsers = Arrays.asList(user1, user2, user3, user4);
         given(userService.findUsersByUuids(anyListOf(String.class))).willReturn(teamUsers);
         Team team = new Team(teamUsers.stream().map(User::getUuid).collect(Collectors.toSet()), userFrom.getUuid(),
                 "id", new Date(), new Date());
         given(teamRepository.deactivateTeam(any(DeactivateTeamRequest.class))).willReturn(team);
 
+        //when
         Set<String> actual = teamService.deactivateTeam(from, text);
 
+        //then
         assertThat(actual, is(expected));
-        verify(userService).findUsersBySlackNames(slackNames);
+        verify(userService).findUsersBySlackUsers(slackUsers);
         ArgumentCaptor<DeactivateTeamRequest> captor = ArgumentCaptor.forClass(DeactivateTeamRequest.class);
         verify(teamRepository).deactivateTeam(captor.capture());
         assertTrue(captor.getValue().getFrom().equals(userFrom.getUuid()));
@@ -253,24 +297,26 @@ public class TeamServiceTest {
     }
 
     @Test
-    public void deactivateTeamIfOneSlackNameInTextAndItIsNotFromUserExecutedCorrectly() {
-        String from = "slack-from";
-        String text = user1.getSlack();
-        List<String> slackNames = Arrays.asList(text, "@" + from);
+    public void deactivateTeamIfOneSlackUserInTextAndItIsNotFromUserExecutedCorrectly() {
+        //given
+        String text = String.format("%s", SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()));
+        List<String> slackUsers = Arrays.asList(user1.getSlackUser(), userFrom.getSlackUser());
         List<User> users = Arrays.asList(userFrom, user1);
-        given(userService.findUsersBySlackNames(slackNames)).willReturn(users);
+        given(userService.findUsersBySlackUsers(slackUsers)).willReturn(users);
         List<User> teamUsers = Arrays.asList(user1, user2, user3, user4);
         given(userService.findUsersByUuids(anyListOf(String.class))).willReturn(teamUsers);
         Set<String> expected = new LinkedHashSet<>(Arrays.asList(
-                user1.getSlack(), user2.getSlack(), user3.getSlack(), user4.getSlack()));
+                user1.getSlackUser(), user2.getSlackUser(), user3.getSlackUser(), user4.getSlackUser()));
         Team team = new Team(teamUsers.stream().map(User::getUuid).collect(Collectors.toSet()), userFrom.getUuid(),
                 "id", new Date(), new Date());
         given(teamRepository.deactivateTeam(any(DeactivateTeamRequest.class))).willReturn(team);
 
-        Set<String> actual = new LinkedHashSet<>(teamService.deactivateTeam(from, text));
+        //when
+        Set<String> actual = new LinkedHashSet<>(teamService.deactivateTeam(userFrom.getSlackUser(), text));
 
+        //then
         assertThat(actual, is(expected));
-        verify(userService).findUsersBySlackNames(slackNames);
+        verify(userService).findUsersBySlackUsers(slackUsers);
         ArgumentCaptor<DeactivateTeamRequest> captor = ArgumentCaptor.forClass(DeactivateTeamRequest.class);
         verify(teamRepository).deactivateTeam(captor.capture());
         assertTrue(captor.getValue().getFrom().equals(userFrom.getUuid()));
@@ -280,12 +326,14 @@ public class TeamServiceTest {
     }
 
     @Test
-    public void deactivateTeamIfSeveralSlackNamesInTextThrowsException() {
-        String from = userFrom.getSlack();
-        String text = String.format("%s %s", user1.getSlack(), user2.getSlack());
+    public void deactivateTeamIfSeveralSlackUsersInTextThrowsException() {
+        String from = userFrom.getSlackUser();
+        String text = String.format("%s %s",
+                SlackUserHandler.wrapSlackUserInFullPattern(user1.getSlackUser()),
+                SlackUserHandler.wrapSlackUserInFullPattern(user2.getSlackUser()));
         expectedException.expect(WrongCommandFormatException.class);
-        expectedException.expectMessage(String.format("We found %d slack names in your command. " +
-                "But expect one slack name.", 2));
+        expectedException.expectMessage(String.format("We found %d slack user in your command. " +
+                "But expect one slack user.", 2));
 
         teamService.deactivateTeam(from, text);
     }

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 import ua.com.juja.microservices.teams.slackbot.exceptions.ExceptionsHandler;
 import ua.com.juja.microservices.teams.slackbot.service.TeamService;
+import ua.com.juja.microservices.teams.slackbot.util.SlackUserHandler;
 
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
@@ -63,7 +64,6 @@ public class TeamSlackbotController {
         this.restTemplate = restTemplate;
     }
 
-    @PostMapping(value = "/teams/activate", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     @ApiOperation(
             value = "Activate new Team, consist of four users",
             notes = "This method activates new Team, which contains four users"
@@ -74,23 +74,26 @@ public class TeamSlackbotController {
             @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
             @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
     })
+    @PostMapping(value = "/teams/activate", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public void onReceiveSlashCommandActivateTeam(@RequestParam("token") String token,
-                                                  @RequestParam("user_name") String fromUser,
+                                                  @RequestParam("user_id") String fromSlackUser,
                                                   @RequestParam("text") String text,
                                                   @RequestParam("response_url") String responseUrl,
                                                   HttpServletResponse response) throws IOException {
         exceptionsHandler.setResponseUrl(responseUrl);
-        if (isRequestCorrect(token, response, fromUser, responseUrl)) {
+        if (isRequestCorrect(token, response, fromSlackUser, responseUrl)) {
             sendInstantResponseMessage(response, ACTIVATE_TEAM_INSTANT_MESSAGE);
-            teamService.activateTeam(fromUser, text);
-            RichMessage message = new RichMessage(String.format(ACTIVATE_TEAM_DELAYED_MESSAGE, text));
+            Set<String> slackUsers = teamService.activateTeam(fromSlackUser, text);
+            RichMessage message = new RichMessage(String.format(ACTIVATE_TEAM_DELAYED_MESSAGE,
+                    slackUsers.stream().sorted()
+                            .map(SlackUserHandler::wrapSlackUserInFullPattern)
+                            .collect(Collectors.joining(" "))));
             sendDelayedResponseMessage(responseUrl, message);
-            log.info("'Activate team' command processed : fromUser: '{}', text: '{}', response_url: '{}' and sent " +
-                    "message to slack: '{}'", fromUser, text, responseUrl, message.getText());
+            log.info("'Activate team' command processed : fromSlackUser: '{}', text: '{}', response_url: '{}' and sent " +
+                    "message to slack: '{}'", fromSlackUser, text, responseUrl, message.getText());
         }
     }
 
-    @PostMapping(value = "/teams/deactivate", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     @ApiOperation(
             value = "Deactivate Team",
             notes = "This method deactivates Team"
@@ -101,24 +104,26 @@ public class TeamSlackbotController {
             @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
             @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
     })
+    @PostMapping(value = "/teams/deactivate", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public void onReceiveSlashCommandDeactivateTeam(@RequestParam("token") String token,
-                                                    @RequestParam("user_name") String fromUser,
+                                                    @RequestParam("user_id") String fromSlackUser,
                                                     @RequestParam("text") String text,
                                                     @RequestParam("response_url") String responseUrl,
                                                     HttpServletResponse response) throws IOException {
         exceptionsHandler.setResponseUrl(responseUrl);
-        if (isRequestCorrect(token, response, fromUser, responseUrl)) {
+        if (isRequestCorrect(token, response, fromSlackUser, responseUrl)) {
             sendInstantResponseMessage(response, String.format(DEACTIVATE_TEAM_INSTANT_MESSAGE, text));
-            Set<String> slackNames = teamService.deactivateTeam(fromUser, text);
+            Set<String> slackUsers = teamService.deactivateTeam(fromSlackUser, text);
             RichMessage message = new RichMessage(String.format(DEACTIVATE_TEAM_DELAYED_MESSAGE,
-                    slackNames.stream().sorted().collect(Collectors.joining(" "))));
+                    slackUsers.stream().sorted()
+                            .map(SlackUserHandler::wrapSlackUserInFullPattern)
+                            .collect(Collectors.joining(" "))));
             sendDelayedResponseMessage(responseUrl, message);
-            log.info("'Deactivate team' command processed : fromUser: '{}', text: '{}', response_url: '{}' and sent " +
-                    "message to slack: '{}'", fromUser, text, responseUrl, message.getText());
+            log.info("'Deactivate team' command processed : fromSlackUser: '{}', text: '{}', response_url: '{}' and sent " +
+                    "message to slack: '{}'", fromSlackUser, text, responseUrl, message.getText());
         }
     }
 
-    @PostMapping(value = "/teams", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     @ApiOperation(
             value = "Get members of active Team of certain user",
             notes = "This method get members of active Team of certain user"
@@ -129,24 +134,35 @@ public class TeamSlackbotController {
             @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
             @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
     })
+    @PostMapping(value = "/teams", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public void onReceiveSlashCommandGetTeam(@RequestParam("token") String token,
-                                             @RequestParam("user_name") String fromUser,
+                                             @RequestParam("user_id") String fromSlackUser,
                                              @RequestParam("text") String text,
                                              @RequestParam("response_url") String responseUrl,
                                              HttpServletResponse response) throws IOException {
         exceptionsHandler.setResponseUrl(responseUrl);
-        if (isRequestCorrect(token, response, fromUser, responseUrl)) {
+        if (isRequestCorrect(token, response, fromSlackUser, responseUrl)) {
             sendInstantResponseMessage(response, String.format(GET_TEAM_INSTANT_MESSAGE, text));
-            Set<String> slackNames = teamService.getTeam(text);
+            Set<String> slackUsers = teamService.getTeam(text);
+
+            String slackUserInText = slackUsers.stream()
+                    .filter(slackUser ->
+                            text.contains(SlackUserHandler.wrapSlackUserInFullPattern(slackUser)) ||
+                                    text.contains(SlackUserHandler.wrapSlackUserInPartialPattern(slackUser)))
+                    .findFirst().orElse(null);
+            slackUserInText = slackUserInText == null ? text : SlackUserHandler.wrapSlackUserInFullPattern(slackUserInText);
+
             RichMessage message = new RichMessage(String.format(GET_TEAM_DELAYED_MESSAGE,
-                    text, slackNames.stream().sorted().collect(Collectors.joining(" "))));
+                    slackUserInText,
+                    slackUsers.stream().sorted()
+                            .map(SlackUserHandler::wrapSlackUserInFullPattern)
+                            .collect(Collectors.joining(" "))));
             sendDelayedResponseMessage(responseUrl, message);
-            log.info("'Get team' command processed : fromUser: '{}', text: '{}', response_url: '{}' and sent " +
-                    "message to slack: '{}'", fromUser, text, responseUrl, message.getText());
+            log.info("'Get team' command processed : fromSlackUser: '{}', text: '{}', response_url: '{}' and sent " +
+                    "message to slack: '{}'", fromSlackUser, text, responseUrl, message.getText());
         }
     }
 
-    @PostMapping(value = "/myteam", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     @ApiOperation(
             value = "Get members of my active Team",
             notes = "This method get members of my active Team"
@@ -157,20 +173,23 @@ public class TeamSlackbotController {
             @ApiResponse(code = HttpURLConnection.HTTP_BAD_METHOD, message = "Bad method"),
             @ApiResponse(code = HttpURLConnection.HTTP_UNSUPPORTED_TYPE, message = "Unsupported request media type")
     })
+    @PostMapping(value = "/myteam", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public void onReceiveSlashCommandGetMyTeam(@RequestParam("token") String token,
-                                               @RequestParam("user_name") String fromUser,
+                                               @RequestParam("user_id") String fromSlackUser,
                                                @RequestParam("response_url") String responseUrl,
                                                HttpServletResponse response) throws IOException {
         exceptionsHandler.setResponseUrl(responseUrl);
-        if (isRequestCorrect(token, response, fromUser, responseUrl)) {
-            fromUser = fromUser.startsWith("@") ? fromUser : "@" + fromUser;
-            sendInstantResponseMessage(response, String.format(GET_MY_TEAM_INSTANT_MESSAGE, fromUser));
-            Set<String> slackNames = teamService.getTeam(fromUser);
+        if (isRequestCorrect(token, response, fromSlackUser, responseUrl)) {
+            String wrappedFromSlackUser = SlackUserHandler.wrapSlackUserInFullPattern(fromSlackUser);
+            sendInstantResponseMessage(response, String.format(GET_MY_TEAM_INSTANT_MESSAGE, wrappedFromSlackUser));
+            Set<String> slackUsers = teamService.getTeam(wrappedFromSlackUser);
             RichMessage message = new RichMessage(String.format(GET_MY_TEAM_DELAYED_MESSAGE,
-                    fromUser, slackNames.stream().sorted().collect(Collectors.joining(" "))));
+                    wrappedFromSlackUser, slackUsers.stream().sorted()
+                            .map(SlackUserHandler::wrapSlackUserInFullPattern)
+                            .collect(Collectors.joining(" "))));
             sendDelayedResponseMessage(responseUrl, message);
-            log.info("'Get my team' command processed : fromUser: '{}', text: '{}', response_url: '{}' and sent " +
-                    "message to slack: '{}'", fromUser, responseUrl, message.getText());
+            log.info("'Get my team' command processed : user: '{}', response_url: '{}' and sent " +
+                    "message to slack: '{}'", fromSlackUser, responseUrl, message.getText());
         }
     }
 

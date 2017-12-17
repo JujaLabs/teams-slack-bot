@@ -16,6 +16,6 @@ import lombok.ToString;
 public class User {
     @JsonProperty
     private String uuid;
-    @JsonProperty
-    private String slack;
+    @JsonProperty ("slackId")
+    private String slackUser;
 }

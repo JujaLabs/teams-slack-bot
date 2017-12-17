@@ -7,7 +7,7 @@ import org.springframework.stereotype.Repository;
 import ua.com.juja.microservices.teams.slackbot.exceptions.ApiError;
 import ua.com.juja.microservices.teams.slackbot.exceptions.UserExchangeException;
 import ua.com.juja.microservices.teams.slackbot.model.users.User;
-import ua.com.juja.microservices.teams.slackbot.model.users.UserSlackNameRequest;
+import ua.com.juja.microservices.teams.slackbot.model.users.UserSlackRequest;
 import ua.com.juja.microservices.teams.slackbot.model.users.UserUuidRequest;
 import ua.com.juja.microservices.teams.slackbot.repository.UserRepository;
 import ua.com.juja.microservices.teams.slackbot.repository.feign.UsersClient;
@@ -27,17 +27,17 @@ public class RestUserRepository implements UserRepository {
     private UsersClient usersClient;
 
     @Override
-    public List<User> findUsersBySlackNames(List<String> slackNames) {
-        UserSlackNameRequest userSlackNameRequest = new UserSlackNameRequest(slackNames);
+    public List<User> findUsersBySlackUsers(List<String> slackUsers) {
+        UserSlackRequest userSlackRequest = new UserSlackRequest(slackUsers);
 
         List<User> users;
         try {
-            users = usersClient.findUsersBySlackNames(userSlackNameRequest);
+            users = usersClient.findUsersBySlackUsers(userSlackRequest);
         } catch (FeignException ex) {
             ApiError error = Utils.convertToApiError(ex.getMessage());
             throw new UserExchangeException(error, ex);
         }
-        log.info("Found Users: '{}' by slackNames: '{}'", users, slackNames);
+        log.info("Found Users: '{}' by slackUsers: '{}'", users, slackUsers);
         return users;
     }
 

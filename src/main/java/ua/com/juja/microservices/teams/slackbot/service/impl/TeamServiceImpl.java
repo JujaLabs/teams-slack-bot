@@ -12,7 +12,7 @@ import ua.com.juja.microservices.teams.slackbot.model.users.User;
 import ua.com.juja.microservices.teams.slackbot.repository.TeamRepository;
 import ua.com.juja.microservices.teams.slackbot.service.TeamService;
 import ua.com.juja.microservices.teams.slackbot.service.UserService;
-import ua.com.juja.microservices.teams.slackbot.util.SlackNameHandler;
+import ua.com.juja.microservices.teams.slackbot.util.SlackUserHandler;
 import ua.com.juja.microservices.teams.slackbot.util.Utils;
 
 import javax.inject.Inject;
@@ -41,42 +41,45 @@ public class TeamServiceImpl implements TeamService {
     }
 
     @Override
-    public Team activateTeam(String fromUser, String text) {
+    public Set<String> activateTeam(String fromSlackUser, String text) {
         Utils.checkNull(text, "Text must not be null!");
-        Utils.checkNull(fromUser, "FromUser must not be null!");
-        Set<String> slackNames = SlackNameHandler.getSlackNamesFromText(text);
-        if (slackNames.size() != TEAM_SIZE) {
-            throw new WrongCommandFormatException(String.format("We found %d slack names in your command." +
-                    " But size of the team must be %s.", slackNames.size(), TEAM_SIZE));
+        Utils.checkNull(fromSlackUser, "FromSlackUser must not be null!");
+        Set<String> slackUsers = SlackUserHandler.getSlackUsersFromText(text);
+        if (slackUsers.size() != TEAM_SIZE) {
+            throw new WrongCommandFormatException(String.format("We found %d slack user in your command." +
+                    " But size of the team must be %s.", slackUsers.size(), TEAM_SIZE));
         }
-        fromUser = SlackNameHandler.addAtToSlackName(fromUser);
-        slackNames.add(fromUser);
-        Set<User> users = new HashSet<>(userService.findUsersBySlackNames(new ArrayList<>(slackNames)));
-        String fromUserUuid = getFromUserUuid(fromUser, users);
-        Set<String> membersUuids = getMembersUuids(fromUser, users, TEAM_SIZE);
+        slackUsers.add(fromSlackUser);
+        Set<User> users = new HashSet<>(userService.findUsersBySlackUsers(new ArrayList<>(slackUsers)));
+        String fromUserUuid = getFromUserUuid(fromSlackUser, users);
+        Set<String> membersUuids = getMembersUuids(fromSlackUser, users, TEAM_SIZE);
         ActivateTeamRequest activateTeamRequest = new ActivateTeamRequest(fromUserUuid, membersUuids);
         Team activatedTeam = teamRepository.activateTeam(activateTeamRequest);
         checkTeamMembersEquality(activateTeamRequest.getMembers(), activatedTeam.getMembers());
+        List<User> teamUsers = userService.findUsersByUuids(new ArrayList<>(activatedTeam.getMembers()));
+        Set<String> teamSlackUsers = teamUsers.stream()
+                .map(User::getSlackUser)
+                .collect(Collectors.toSet());
         log.info("Team activated: '{}'", activatedTeam.getId());
-        return activatedTeam;
+        return teamSlackUsers;
     }
 
-    private String getFromUserUuid(String fromUserSlackName, Set<User> users) {
-        log.debug("Before extract fromUser from users : '{}'.FromUser is '{}'", users, fromUserSlackName);
+    private String getFromUserUuid(String fromSlackUser, Set<User> users) {
+        log.debug("Before extract fromSlackUser from users : '{}'. fromSlackUser is '{}'", users, fromSlackUser);
         User fromUser = users.stream()
-                .filter(user -> user.getSlack().equals(fromUserSlackName))
+                .filter(user -> user.getSlackUser().equals(fromSlackUser))
                 .collect(Collectors.toList()).get(0);
-        log.debug("After extract fromUser from users map. Uuid is '{}'", fromUser.getUuid());
+        log.debug("After extract fromSlackUser from users map. Uuid is '{}'", fromUser.getUuid());
         return fromUser.getUuid();
     }
 
-    private Set<String> getMembersUuids(String fromUser, Set<User> users, int expectedSize) {
-        //Set<users> contain all users of request (fromUser and all users in text)
+    private Set<String> getMembersUuids(String fromSlackUser, Set<User> users, int expectedSize) {
+        //Set<users> contain all users of request (fromSlackUser and all users in text)
         //Response depends on:
-        //case Activate Team    -  is fromUser a member of new Team or not
-        //case Deactivate Team  -  is fromUser deactivate his team or not
-        log.debug("Before extract members from users : '{}'. Expected size '{}'. FromUser is '{}'", users,
-                expectedSize, fromUser);
+        //case Activate Team    -  is fromSlackUser a member of new Team or not
+        //case Deactivate Team  -  is fromSlackUser deactivate his team or not
+        log.debug("Before extract members from users : '{}'. Expected size '{}'. fromSlackUser is '{}'", users,
+                expectedSize, fromSlackUser);
         Set<String> uuids;
         if (users.size() == expectedSize) {
             //if fromUser in new Team or fromUser deactivate his Team
@@ -85,7 +88,7 @@ public class TeamServiceImpl implements TeamService {
             //if fromUser not in new Team or fromUser deactivate not his Team
             //That's why we exclude him from response
             uuids = users.stream()
-                    .filter(user -> !user.getSlack().equals(fromUser))
+                    .filter(user -> !user.getSlackUser().equals(fromSlackUser))
                     .map(User::getUuid)
                     .collect(Collectors.toSet());
         }
@@ -112,41 +115,40 @@ public class TeamServiceImpl implements TeamService {
     @Override
     public Set<String> getTeam(String text) {
         Utils.checkNull(text, "Text must not be null!");
-        Set<String> slackNames = SlackNameHandler.getSlackNamesFromText(text);
-        if (slackNames.size() != 1) {
-            throw new WrongCommandFormatException(String.format("We found %d slack names in your command." +
-                    " But expect one slack name.", slackNames.size()));
+        Set<String> slackUsers = SlackUserHandler.getSlackUsersFromText(text);
+        if (slackUsers.size() != 1) {
+            throw new WrongCommandFormatException(String.format("We found %d slack user in your command." +
+                    " But expect one slack user.", slackUsers.size()));
         }
-        List<User> users = userService.findUsersBySlackNames(new ArrayList<>(slackNames));
+        List<User> users = userService.findUsersBySlackUsers(new ArrayList<>(slackUsers));
         String uuid = users.get(0).getUuid();
         Team team = teamRepository.getTeam(uuid);
         List<User> teamUsers = userService.findUsersByUuids(new ArrayList<>(team.getMembers()));
-        Set<String> teamSlackNames = teamUsers.stream()
-                .map(User::getSlack)
+        Set<String> teamSlackUsers = teamUsers.stream()
+                .map(User::getSlackUser)
                 .collect(Collectors.toSet());
         log.info("Team got: '{}'", team.getId());
-        return teamSlackNames;
+        return teamSlackUsers;
     }
 
     @Override
-    public Set<String> deactivateTeam(String fromUser, String text) {
-        Set<String> slackNames = SlackNameHandler.getSlackNamesFromText(text);
-        if (slackNames.size() != 1) {
-            throw new WrongCommandFormatException(String.format("We found %d slack names in your command." +
-                    " But expect one slack name.", slackNames.size()));
+    public Set<String> deactivateTeam(String fromSlackUser, String text) {
+        Set<String> slackUsers = SlackUserHandler.getSlackUsersFromText(text);
+        if (slackUsers.size() != 1) {
+            throw new WrongCommandFormatException(String.format("We found %d slack user in your command." +
+                    " But expect one slack user.", slackUsers.size()));
         }
-        fromUser = SlackNameHandler.addAtToSlackName(fromUser);
-        slackNames.add(fromUser);
-        Set<User> users = new HashSet<>(userService.findUsersBySlackNames(new ArrayList<>(slackNames)));
-        String fromUserUuid = getFromUserUuid(fromUser, users);
-        String uuid = new ArrayList<>(getMembersUuids(fromUser, users, 1)).get(0);
+        slackUsers.add(fromSlackUser);
+        Set<User> users = new HashSet<>(userService.findUsersBySlackUsers(new ArrayList<>(slackUsers)));
+        String fromUserUuid = getFromUserUuid(fromSlackUser, users);
+        String uuid = new ArrayList<>(getMembersUuids(fromSlackUser, users, 1)).get(0);
         DeactivateTeamRequest deactivateTeamRequest = new DeactivateTeamRequest(fromUserUuid, uuid);
         Team deactivatedTeam = teamRepository.deactivateTeam(deactivateTeamRequest);
         List<User> teamUsers = userService.findUsersByUuids(new ArrayList<>(deactivatedTeam.getMembers()));
-        Set<String> teamSlackNames = teamUsers.stream()
-                .map(User::getSlack)
+        Set<String> teamSlackUsers = teamUsers.stream()
+                .map(User::getSlackUser)
                 .collect(Collectors.toSet());
         log.info("Team deactivated: '{}'", deactivatedTeam.getId());
-        return teamSlackNames;
+        return teamSlackUsers;
     }
 }

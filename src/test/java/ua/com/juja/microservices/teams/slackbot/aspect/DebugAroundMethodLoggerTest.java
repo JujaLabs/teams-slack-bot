@@ -18,6 +18,7 @@ import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ua.com.juja.microservices.teams.slackbot.util.SlackUserHandler;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -43,7 +44,6 @@ public class DebugAroundMethodLoggerTest {
     private static Logger mockLogger;
     private static Map<LogLine, Integer> debugLogLines = new HashMap<>();
     private DebugAroundMethodLogger debugAroundMethodLogger = new DebugAroundMethodLogger();
-
     @Mock
     private ProceedingJoinPoint proceedingJoinPoint;
 
@@ -54,6 +54,7 @@ public class DebugAroundMethodLoggerTest {
         mockLogger = PowerMockito.mock(Logger.class);
         when(LoggerFactory.getLogger(any(Class.class)))
                 .thenReturn(mockLogger);
+
     }
 
     @AfterClass
@@ -64,13 +65,16 @@ public class DebugAroundMethodLoggerTest {
 
     @Test
     public void logBusinessMethodsIfDebugDisabledDoNothing() throws Throwable {
-
+        //given
         Object expected = new Object();
+
         when(mockLogger.isDebugEnabled()).thenReturn(false);
         when(proceedingJoinPoint.proceed()).thenReturn(expected);
 
+        //when
         Object actual = debugAroundMethodLogger.logBusinessMethods(proceedingJoinPoint);
 
+        //then
         verify(proceedingJoinPoint, times(1)).proceed();
         verifyNoMoreInteractions(proceedingJoinPoint);
         assertThat(actual, is(expected));
@@ -78,11 +82,15 @@ public class DebugAroundMethodLoggerTest {
 
     @Test
     public void logBusinessMethodsIfDebugEnabledAndMethodReturnsVoid() throws Throwable {
-
+        //given
         Object result = Void.TYPE;
         MethodSignature methodSignature = PowerMockito.mock(MethodSignature.class, withSettings().extraInterfaces
                 (Signature.class, MemberSignature.class, CodeSignature.class, MethodSignature.class));
-        Object[] args = {"@a", "@b", "@c"};
+        Object[] args = {
+                String.format(
+                        SlackUserHandler.wrapSlackUserInFullPattern("slack1"),
+                        SlackUserHandler.wrapSlackUserInFullPattern("slack2"),
+                        SlackUserHandler.wrapSlackUserInFullPattern("slack3"))};
         String returnType = "void";
         String message = "execution(method)";
         String beforeMessage = "{} called with args '{}'!";
@@ -95,8 +103,10 @@ public class DebugAroundMethodLoggerTest {
         when(proceedingJoinPoint.getSignature()).thenReturn(methodSignature);
         when(methodSignature.getReturnType()).thenReturn(Void.TYPE);
 
+        //when
         debugAroundMethodLogger.logBusinessMethods(proceedingJoinPoint);
 
+        //then
         verify(proceedingJoinPoint).getArgs();
         verify(proceedingJoinPoint).toShortString();
         verify(proceedingJoinPoint).proceed();
@@ -115,10 +125,14 @@ public class DebugAroundMethodLoggerTest {
 
     @Test
     public void logBusinessMethodsIfDebugEnabledAndMethodReturnsNotVoid() throws Throwable {
-
+        //given
         MethodSignature methodSignature = PowerMockito.mock(MethodSignature.class, withSettings().extraInterfaces
                 (Signature.class, MemberSignature.class, CodeSignature.class, MethodSignature.class));
-        Object[] args = {"@a", "@b", "@c"};
+        Object[] args = {
+                String.format(
+                        SlackUserHandler.wrapSlackUserInFullPattern("slack1"),
+                        SlackUserHandler.wrapSlackUserInFullPattern("slack2"),
+                        SlackUserHandler.wrapSlackUserInFullPattern("slack3"))};
         String result = "@d";
         String message = "execution(method)";
         String beforeMessage = "{} called with args '{}'!";
@@ -131,8 +145,10 @@ public class DebugAroundMethodLoggerTest {
         when(proceedingJoinPoint.getSignature()).thenReturn(methodSignature);
         when(methodSignature.getReturnType()).thenReturn(String.class);
 
+        //when
         debugAroundMethodLogger.logBusinessMethods(proceedingJoinPoint);
 
+        //then
         verify(proceedingJoinPoint).getArgs();
         verify(proceedingJoinPoint).toShortString();
         verify(proceedingJoinPoint).proceed();
