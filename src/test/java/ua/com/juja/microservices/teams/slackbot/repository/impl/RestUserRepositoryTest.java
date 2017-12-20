@@ -1,5 +1,6 @@
 package ua.com.juja.microservices.teams.slackbot.repository.impl;
 
+import net.javacrumbs.jsonunit.core.Option;
 import net.javacrumbs.jsonunit.core.util.ResourceUtils;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -21,11 +22,11 @@ import ua.com.juja.microservices.utils.TestUtils;
 
 import javax.inject.Inject;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 import static net.javacrumbs.jsonunit.core.util.ResourceUtils.resource;
+import static net.javacrumbs.jsonunit.fluent.JsonFluentAssert.assertThatJson;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
@@ -53,17 +54,17 @@ public class RestUserRepositoryTest {
     @Inject
     private RestTemplate restTemplate;
     private MockRestServiceServer mockServer;
-    @Value("${users.endpoint.usersBySlackNames}")
-    private String usersFindUsersBySlackNamesUrl;
+    @Value("${users.endpoint.usersBySlackIds}")
+    private String usersFindUsersBySlackIdsUrl;
     @Value("${users.endpoint.usersByUuids}")
     private String usersFindUsersByUuidsUrl;
 
     @BeforeClass
     public static void oneTimeSetup() {
-        user1 = new User("uuid1", "@slack1");
-        user2 = new User("uuid2", "@slack2");
-        user3 = new User("uuid3", "@slack3");
-        user4 = new User("uuid4", "@slack4");
+        user1 = new User("uuid1", "slack-id1");
+        user2 = new User("uuid2", "slack-id2");
+        user3 = new User("uuid3", "slack-id3");
+        user4 = new User("uuid4", "slack-id4");
     }
 
     @Before
@@ -72,56 +73,47 @@ public class RestUserRepositoryTest {
     }
 
     @Test
-    public void findUsersBySlackNamesIfUserServerReturnsUsersCorrectly() throws IOException {
-
-        List<String> incorrectSlackNames = new ArrayList<>();
-        incorrectSlackNames.add("slack1");
-        incorrectSlackNames.add("@slack2");
-        incorrectSlackNames.add("slack3");
-        incorrectSlackNames.add("@slack4");
-
+    public void findUsersBySlackIdsIfUserServerReturnsUsersCorrectly() throws IOException {
         List<User> expected = Arrays.asList(user1, user2, user3, user4);
-
+        List<String> slackIds = Arrays.asList(user1.getSlackId(), user2.getSlackId(),
+                user3.getSlackId(), user4.getSlackId());
         String jsonContentRequest = TestUtils.convertToString(ResourceUtils.resource
-                ("request/requestUserRepositoryGetUsersBySlacknames.json"));
-
+                ("request/requestUserRepositoryFindUsersBySlackIds.json"));
         String jsonContentExpectedResponse = TestUtils.convertToString(
-                resource("response/responseUserRepositoryGetUsersBySlacknames.json"));
-        mockServer.expect(requestTo(usersFindUsersBySlackNamesUrl))
+                resource("response/responseUserRepositoryFindUsersBySlackIds.json"));
+        mockServer.expect(requestTo(usersFindUsersBySlackIdsUrl))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().contentType(APPLICATION_JSON_UTF8))
-                .andExpect(content().string(jsonContentRequest))
+                .andExpect(request -> assertThatJson(request.getBody().toString())
+                        .when(Option.IGNORING_ARRAY_ORDER)
+                        .isEqualTo(jsonContentRequest))
                 .andRespond(withSuccess(jsonContentExpectedResponse, MediaType.APPLICATION_JSON_UTF8));
 
-        List<User> actual = userRepository.findUsersBySlackNames(incorrectSlackNames);
+        List<User> actual = userRepository.findUsersBySlackIds(slackIds);
 
         assertThat(actual, is(expected));
     }
 
     @Test
-    public void findUsersBySlackNamesIfUserServerReturnsException() throws IOException {
-
-        List<String> slackNames = new ArrayList<>();
-        slackNames.add("slack1");
-        slackNames.add("@slack2");
-        slackNames.add("slack3");
-        slackNames.add("@slack4");
-
+    public void findUsersBySlackIdsIfUserServerReturnsException() throws IOException {
+        List<String> slackIds = Arrays.asList(user1.getSlackId(), user2.getSlackId(),
+                user3.getSlackId(), user4.getSlackId());
         String jsonContentRequest = TestUtils.convertToString(ResourceUtils.resource
-                ("request/requestUserRepositoryGetUsersBySlacknames.json"));
-
+                ("request/requestUserRepositoryFindUsersBySlackIds.json"));
         String jsonContentExpectedResponse = TestUtils.convertToString(
                 resource("response/responseUserRepositoryThrowsException.json"));
-        mockServer.expect(requestTo(usersFindUsersBySlackNamesUrl))
+        mockServer.expect(requestTo(usersFindUsersBySlackIdsUrl))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().contentType(APPLICATION_JSON_UTF8))
-                .andExpect(content().string(jsonContentRequest))
+                .andExpect(request -> assertThatJson(request.getBody().toString())
+                        .when(Option.IGNORING_ARRAY_ORDER)
+                        .isEqualTo(jsonContentRequest))
                 .andRespond(withBadRequest().body(jsonContentExpectedResponse));
 
         expectedException.expect(UserExchangeException.class);
         expectedException.expectMessage(containsString("Sorry, User server return an error"));
 
-        userRepository.findUsersBySlackNames(slackNames);
+        userRepository.findUsersBySlackIds(slackIds);
     }
 
     @Test
@@ -130,10 +122,9 @@ public class RestUserRepositoryTest {
                 user3.getUuid(), user4.getUuid());
         List<User> expected = Arrays.asList(user1, user2, user3, user4);
         String jsonContentRequest = TestUtils.convertToString(ResourceUtils.resource
-                ("request/requestUserRepositoryGetUsersByUuids.json"));
-
+                ("request/requestUserRepositoryFindUsersByUuids.json"));
         String jsonContentExpectedResponse = TestUtils.convertToString(
-                resource("response/responseUserRepositoryGetUsersByUuids.json"));
+                resource("response/responseUserRepositoryFindUsersByUuids.json"));
         mockServer.expect(requestTo(usersFindUsersByUuidsUrl))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().contentType(APPLICATION_JSON_UTF8))
@@ -150,7 +141,7 @@ public class RestUserRepositoryTest {
         List<String> uuids = Arrays.asList(user1.getUuid(), user2.getUuid(),
                 user3.getUuid(), user4.getUuid());
         String jsonContentRequest = TestUtils.convertToString(ResourceUtils.resource
-                ("request/requestUserRepositoryGetUsersByUuids.json"));
+                ("request/requestUserRepositoryFindUsersByUuids.json"));
         String jsonContentExpectedResponse = TestUtils.convertToString(
                 resource("response/responseUserRepositoryThrowsException.json"));
         mockServer.expect(requestTo(usersFindUsersByUuidsUrl))
